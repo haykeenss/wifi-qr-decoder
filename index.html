@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WiFi QR Decoder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center p-6">
+  <!-- Signature Hex ASCII: 50 61 75 6C 20 48 61 79 6B 65 65 6E 73 -->
+
+  <h1 class="text-3xl font-bold mb-2">📶 WiFi QR Decoder</h1>
+  <p class="text-gray-600 max-w-lg text-center mb-6">
+    Scan a Wi-Fi QR code with your camera or upload an image.  
+    This app extracts <b>SSID</b>, <b>Password</b>, and <b>Encryption Type</b> 
+    so you can quickly connect your device.
+  </p>
+
+  <div id="error" class="text-red-500 mb-4"></div>
+
+  <div class="flex flex-col md:flex-row gap-6 items-start">
+    <!-- Camera preview -->
+    <div class="w-full md:w-96 shadow-lg rounded-2xl bg-white overflow-hidden">
+      <video id="video" autoplay playsinline class="w-full rounded-xl"></video>
+      <canvas id="canvas" class="hidden"></canvas>
+    </div>
+
+    <!-- Result -->
+    <div id="resultCard" class="w-full md:w-96 shadow-lg rounded-2xl bg-white p-4 hidden">
+      <h2 class="text-xl font-semibold mb-3">🔍 Decoded Result</h2>
+      <div id="resultContent" class="space-y-3"></div>
+    </div>
+  </div>
+
+  <!-- Upload section -->
+  <div class="mt-6 w-full md:w-96">
+    <input type="file" accept="image/png, image/jpeg" id="fileInput"
+      class="block w-full border rounded-lg p-2 bg-white shadow">
+  </div>
+
+  <!-- Subtle signature -->
+  <p class="text-xs text-gray-400 text-center mt-6 select-none">
+    © Built by <span class="font-mono">Paul Haykeens</span>
+  </p>
+
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const resultCard = document.getElementById("resultCard");
+    const resultContent = document.getElementById("resultContent");
+    const errorDiv = document.getElementById("error");
+
+    // Signature Easter Egg
+    console.log("🔑 Signature:", atob("UGF1bCBIYXlrZWVucw=="));
+
+    // Init camera
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+      } catch (err) {
+        errorDiv.textContent = " Camera access denied. Please allow permissions.";
+      }
+    }
+    initCamera();
+
+    // Camera scan loop
+    setInterval(() => {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        if (code) parseWifi(code.data);
+      }
+    }, 800);
+
+    // Upload image handler
+    document.getElementById("fileInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.src = reader.result;
+        img.onload = () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, canvas.width, canvas.height);
+          if (code) {
+            parseWifi(code.data);
+          } else {
+            alert(" No QR code found in this image.");
+          }
+        };
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Parse WiFi QR Code
+    function parseWifi(text) {
+      const regex = /^WIFI:(?:T:([^;]*);)?S:([^;]*);(?:P:([^;]*);)?(?:H:([^;]*);)?;*$/;
+      const m = regex.exec(text);
+      let html = "";
+
+      if (m) {
+        const data = {
+          ssid: m[2] || "(unknown)",
+          type: m[1] || "nopass",
+          password: m[3] || "(none)",
+          hidden: m[4] || "false",
+          raw: text
+        };
+        html += buildField("SSID", data.ssid);
+        html += buildField("Encryption", data.type, false);
+        html += buildField("Password", data.password, data.password !== "(none)");
+        html += buildField("Hidden", data.hidden, false);
+      } else {
+        html = `<div><b>Raw:</b> ${text}</div>`;
+      }
+
+      resultContent.innerHTML = html;
+      resultCard.classList.remove("hidden");
+    }
+
+    // Build output fields
+    function buildField(label, value, copy = true) {
+      return `
+        <div class="flex justify-between items-center">
+          <span><b>${label}:</b> ${value}</span>
+          ${copy ? `<button onclick="navigator.clipboard.writeText('${value.replace(/'/g,"\\'")}')" 
+            class="px-2 py-1 border rounded text-sm hover:bg-gray-100">Copy</button>` : ""}
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>
